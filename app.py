@@ -17,14 +17,13 @@ VISION_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o")
 # Marge pour l'enveloppe du formulaire (multipart)
 app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD_BYTES + 1024 * 1024
 
-SYSTEM_PROMPT = """Tu es un assistant qui retranscrit des recettes de cuisine à partir d'une vidéo.
-Tu reçois : la transcription de ce qui est dit dans la vidéo, et des images clés de la vidéo (le texte affiché à l'écran compte).
+SYSTEM_PROMPT = """Tu es un assistant qui retranscrit des recettes de cuisine à partir d'une vidéo ou d'une liste d'ingrédients de frigo.
+Tu reçois : soit la transcription et des images clés, soit une liste d'ingrédients disponibles dans le frigo pour improviser une recette.
 
 RÈGLES STRICTES :
-- Base-toi UNIQUEMENT sur ce qui est dit, écrit à l'écran ou visible dans les images.
-- N'invente jamais un ingrédient ni une quantité. Si une quantité n'est pas donnée, écris « quantité non précisée ».
+- Base-toi UNIQUEMENT sur ce qui est fourni (audio, visuels ou ingrédients du frigo).
+- N'invente jamais un ingrédient majeur hors de la liste fournie pour le frigo vide. Si une quantité n'est pas donnée, écris « quantité non précisée ».
 - Si tu fais une estimation visuelle, marque-la clairement « (estimation) ».
-- Si la vidéo ne contient pas de recette, dis-le simplement.
 - Réponds en français, en texte brut : pas de markdown (pas de ** ni de #).
 
 FORMAT :
@@ -37,7 +36,7 @@ PRÉPARATION
 1. étape détaillée
 2. ...
 
-INFOS (temps de cuisson, température, astuces) : seulement si mentionnés dans la vidéo."""
+INFOS (temps de cuisson, température, astuces) : seulement si pertinents."""
 
 
 def reply(text):
@@ -97,7 +96,7 @@ def home():
 def extract_recipe():
     video = request.files.get("video")
     if not video or not video.filename:
-        return reply("Aucune vidéo reçue.")
+        return reply("Aucune donnée reçue.")
 
     api_key = os.environ.get("OPENAI_API_KEY")
     if not api_key:
@@ -106,6 +105,22 @@ def extract_recipe():
     client = OpenAI(api_key=api_key)
 
     try:
+        # Gestion du mode Frigo Vide (détecté par le nom du fichier temporaire 'fridge.txt')
+        if video.filename == "fridge.txt":
+            ingredients = video.read().decode("utf-8")
+            prompt = f"J'ai ces ingrédients dans mon frigo : {ingredients}. Invente une recette simple et rapide avec."
+            
+            response = client.chat.completions.create(
+                model=VISION_MODEL,
+                messages=[
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": prompt},
+                ],
+                temperature=0.4,
+            )
+            return reply(response.choices[0].message.content)
+
+        # Traitement vidéo normal
         with tempfile.TemporaryDirectory() as folder:
             path = os.path.join(folder, "video.mp4")
             video.save(path)
