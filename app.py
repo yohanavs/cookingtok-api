@@ -27,22 +27,31 @@ def extract_recipe():
         }
         
         if "vm.tiktok.com" in tiktok_url or "vt.tiktok.com" in tiktok_url:
-            res = requests.head(tiktok_url, allow_redirects=True, headers=headers, timeout=10)
-            tiktok_url = res.url
+            try:
+                res = requests.head(tiktok_url, allow_redirects=True, headers=headers, timeout=5)
+                tiktok_url = res.url
+            except Exception:
+                pass
 
         match = re.search(r'/video/(\d+)', tiktok_url)
         video_id = match.group(1) if match else "Inconnu"
 
-        oembed_url = f"https://www.tiktok.com/oembed?url={tiktok_url}"
-        oembed_res = requests.get(oembed_url, headers=headers, timeout=10)
-        
         video_title = "Non disponible"
-        if oembed_res.status_code == 200:
-            video_title = oembed_res.json().get('title', 'Non disponible')
+        try:
+            oembed_url = f"https://www.tiktok.com/oembed?url={tiktok_url}"
+            oembed_res = requests.get(oembed_url, headers=headers, timeout=5)
+            if oembed_res.status_code == 200:
+                video_title = oembed_res.json().get('title', 'Non disponible')
+        except Exception:
+            pass
 
+        # Si l'oembed a échoué mais qu'on a l'URL ou l'ID, on laisse Gemini deviner ou s'appuyer sur l'URL brute
+        prompt = f"Je souhaite cuisiner la recette de cette vidéo TikTok (ID: {video_id}, URL: {tiktok_url}). Titre récupéré : « {video_title} ». Extrais ou reconstitue le nom de la recette, les ingrédients et les étapes de préparation sous forme de liste structurée."
+
+        # Modèle validé sans structure lourde
         gemini_response = client.models.generate_content(
-            model='gemini-3.8-flash',
-            contents=f"Voici le titre et les informations textuelles d'une vidéo TikTok de cuisine (ID: {video_id}) : « {video_title} ». Extrais ou reconstitue le nom de la recette probable, les ingrédients associés et les étapes de préparation sous forme de liste structurée."
+            model='gemini-2.5-flash',
+            contents=prompt
         )
         
         return jsonify({"result": gemini_response.text})
