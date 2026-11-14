@@ -4,24 +4,9 @@ import requests
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from google import genai
-from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
-from google.genai.errors import ServerError
 
 app = Flask(__name__)
 CORS(app)
-
-# Fonction de réessai automatique en cas d'erreur 503 / surcharge de l'API
-@retry(
-    stop=stop_after_attempt(3),
-    wait=wait_exponential(multiplier=1, min=2, max=10),
-    retry=retry_if_exception_type(ServerError),
-    reraise=True
-)
-def call_gemini_with_retry(client, model, prompt):
-    return client.models.generate_content(
-        model=model,
-        contents=prompt
-    )
 
 @app.route('/extract', methods=['POST'])
 def extract_recipe():
@@ -40,29 +25,23 @@ def extract_recipe():
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
         }
-        
-        if "vm.tiktok.com" in tiktok_url or "vt.tiktok.com" in tiktok_url:
-            try:
-                res = requests.head(tiktok_url, allow_redirects=True, headers=headers, timeout=5)
-                tiktok_url = res.url
-            except Exception:
-                pass
 
-        match = re.search(r'/video/(\d+)', tiktok_url)
-        video_id = match.group(1) if match else "Inconnu"
-
+        # On tente de récupérer le titre via oEmbed avec un timeout très court, sinon on continue quand même
         video_title = "Non disponible"
         try:
             oembed_url = f"https://www.tiktok.com/oembed?url={tiktok_url}"
-            oembed_res = requests.get(oembed_url, headers=headers, timeout=5)
+            oembed_res = requests.get(oembed_url, headers=headers, timeout=3)
             if oembed_res.status_code == 200:
                 video_title = oembed_res.json().get('title', 'Non disponible')
         except Exception:
             pass
 
-        prompt = f"Je souhaite cuisiner la recette de cette vidéo TikTok (ID: {video_id}, URL: {tiktok_url}). Titre récupéré : « {video_title} ». Extrais ou reconstitue le nom de la recette, les ingrédients et les étapes de préparation sous forme de liste structurée."
+        prompt = f"Je souhaite cuisiner la recette de cette vidéo TikTok (URL: {tiktok_url}). Titre récupéré : « {video_title} ». Extrais ou reconstitue le nom de la recette, les ingrédients et les étapes de préparation sous forme de liste structurée."
 
-        gemini_response = call_gemini_with_retry(client, 'gemini-3.8-flash', prompt)
+        gemini_response = client.models.generate_content(
+            model='gemini-3.8-flash',
+            contents=prompt
+        )
         
         return jsonify({"result": gemini_response.text})
         
