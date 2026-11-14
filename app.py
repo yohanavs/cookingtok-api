@@ -21,16 +21,16 @@ SYSTEM_PROMPT = """Tu es un assistant qui retranscrit des recettes de cuisine à
 Tu reçois : soit la transcription et des images clés, soit une liste d'ingrédients disponibles dans le frigo pour improviser une recette.
 
 RÈGLES STRICTES :
-- Base-toi UNIQUEMENT sur ce qui est fourni (audio, visuels ou ingrédients du frigo).
-- N'invente jamais un ingrédient majeur hors de la liste fournie pour le frigo vide. Si une quantité n'est pas donnée, écris « quantité non précisée ».
-- Si tu fais une estimation visuelle, marque-la clairement « (estimation) ».
+- Pour chaque ingrédient, indique TOUJOURS une quantité précise estimée pour 1 personne (ex: 80 g de pâtes, 1 filet de poulet de 120 g, 1 cuillère à soupe d'huile). Ne mets jamais « quantité non précisée ».
+- Ajoute systématiquement les basiques de cuisine si nécessaire (sel, poivre, huile d'olive, beurre, ail).
+- Si tu fais une estimation visuelle ou improvisée, marque-la clairement « (estimation) ».
 - Réponds en français, en texte brut : pas de markdown (pas de ** ni de #).
 
 FORMAT :
 NOM DU PLAT
 
 INGRÉDIENTS
-- quantité + ingrédient
+- quantité précise + ingrédient
 
 PRÉPARATION
 1. étape détaillée
@@ -40,7 +40,6 @@ INFOS (temps de cuisson, température, astuces) : seulement si pertinents."""
 
 
 def reply(text):
-    # Toujours 200 pour que l'interface affiche le message tel quel
     return jsonify({"result": text}), 200
 
 
@@ -52,7 +51,6 @@ def too_big(_error):
 def transcribe(client, path):
     try:
         with open(path, "rb") as f:
-            # On force le nom "video.mp4" : Whisper vérifie l'extension (.mov refusé)
             result = client.audio.transcriptions.create(
                 model="whisper-1", file=("video.mp4", f)
             )
@@ -105,10 +103,9 @@ def extract_recipe():
     client = OpenAI(api_key=api_key)
 
     try:
-        # Gestion du mode Frigo Vide (détecté par le nom du fichier temporaire 'fridge.txt')
         if video.filename == "fridge.txt":
             ingredients = video.read().decode("utf-8")
-            prompt = f"J'ai ces ingrédients dans mon frigo : {ingredients}. Invente une recette simple et rapide avec."
+            prompt = f"J'ai ces ingrédients dans mon frigo : {ingredients}. Invente une recette simple et équilibrée pour 1 personne avec des quantités chiffrées précises et les basiques (sel, poivre, huile)."
             
             response = client.chat.completions.create(
                 model=VISION_MODEL,
@@ -120,7 +117,6 @@ def extract_recipe():
             )
             return reply(response.choices[0].message.content)
 
-        # Traitement vidéo normal
         with tempfile.TemporaryDirectory() as folder:
             path = os.path.join(folder, "video.mp4")
             video.save(path)
