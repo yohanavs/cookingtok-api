@@ -36,12 +36,14 @@ def extract_recipe():
 
         prompt = f"Je souhaite cuisiner la recette de cette vidéo TikTok (URL: {tiktok_url}). Titre récupéré : « {video_title} ». Extrais ou reconstitue le nom de la recette, les ingrédients et les étapes de préparation sous forme de liste structurée."
 
-        gemini_response = client.models.generate_content(
-            model='gemini-2.5-flash',
-            contents=prompt
-        )
-        
-        return jsonify({"result": gemini_response.text})
+        try:
+            gemini_response = client.models.generate_content(
+                model='gemini-3.8-flash',
+                contents=prompt
+            )
+            return jsonify({"result": gemini_response.text})
+        except Exception as api_err:
+            return jsonify({"result": "Surcharge temporaire de l'API Google (503 / High Demand). Réessaie dans quelques secondes."}), 200
         
     except Exception as e:
         import traceback
