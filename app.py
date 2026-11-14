@@ -1,5 +1,4 @@
 import os
-import re
 import requests
 from flask import Flask, request, jsonify
 from flask_cors import CORS
@@ -19,30 +18,24 @@ def extract_recipe():
     video_path = "temp_video.mp4"
     
     try:
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
-        }
-        
-        if "vm.tiktok.com" in tiktok_url or "vt.tiktok.com" in tiktok_url:
-            res = requests.head(tiktok_url, allow_redirects=True, headers=headers)
-            tiktok_url = res.url
-
-        match = re.search(r'/video/(\d+)', tiktok_url)
-        if not match:
-            return jsonify({"result": "Erreur : Lien TikTok invalide."}), 400
-        
-        video_id = match.group(1)
-        api_url = f"https://api16-normal-c-useast1a.tiktokv.com/aweme/v1/feed/?aweme_id={video_id}"
+        # Utilisation de l'API alternative pour récupérer le lien direct sans blocage
+        api_url = f"https://www.tikwm.com/api/?url={tiktok_url}"
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
         
         response = requests.get(api_url, headers=headers)
         res_json = response.json()
         
-        video_dl_url = res_json['aweme_list'][0]['video']['play_addr']['url_list'][0]
-        video_data = requests.get(video_dl_url, headers=headers).content
+        if res_json.get('code') != 0:
+            return jsonify({"result": "Erreur : Impossible de récupérer la vidéo TikTok."}), 400
+            
+        video_dl_url = res_json['data']['play']
         
+        # Téléchargement du fichier vidéo
+        video_data = requests.get(video_dl_url, headers=headers).content
         with open(video_path, 'wb') as f:
             f.write(video_data)
             
+        # Analyse avec Gemini
         video_file = client.files.upload(file=video_path)
         
         gemini_response = client.models.generate_content(
