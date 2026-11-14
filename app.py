@@ -1,64 +1,40 @@
 import os
-import re
-import requests
+import traceback
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from google import genai
 
 app = Flask(__name__)
 CORS(app)
-client = genai.Client()
 
 @app.route('/extract', methods=['POST'])
 def extract_recipe():
-    data = request.json
-    if not data or 'url' not in data:
-        return jsonify({"result": "Erreur : URL manquante."}), 400
-        
-    tiktok_url = data.get('url')
-    
     try:
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
-        
-        if "vm.tiktok.com" in tiktok_url or "vt.tiktok.com" in tiktok_url:
-            res = requests.head(tiktok_url, allow_redirects=True, headers=headers, timeout=10)
-            tiktok_url = res.url
-
-        match = re.search(r'/video/(\d+)', tiktok_url)
-        if not match:
-            return jsonify({"result": "Erreur : Lien TikTok invalide."}), 400
-        
-        video_id = match.group(1)
-        api_url = f"https://www.tikwm.com/api/?url=https://www.tiktok.com/@user/video/{video_id}"
-        
-        response = requests.get(api_url, headers=headers, timeout=15)
-        res_json = response.json()
-        
-        if res_json.get('code') != 0 or 'data' not in res_json:
-            return jsonify({"result": "Erreur : Impossible de joindre l'extracteur. Essaie avec un lien direct depuis un navigateur PC."}), 500
+        data = request.json
+        if not data or 'url' not in data:
+            return jsonify({"result": "Erreur : URL manquante."}), 400
             
-        video_dl_url = res_json['data']['play']
+        tiktok_url = data.get('url')
         
-        # Téléchargement direct en mémoire vive sans passer par le disque
-        video_bytes = requests.get(video_dl_url, headers=headers, timeout=20).content
+        # Test de l'initialisation du client Gemini
+        api_key = os.environ.get("GEMINI_API_KEY")
+        if not api_key:
+            return jsonify({"result": "Erreur : La clé GEMINI_API_KEY n'est pas configurée sur Render."}), 500
+
+        client = genai.Client(api_key=api_key)
         
-        video_file = client.files.upload(
-            file=video_bytes,
-            mime_type="video/mp4"
-        )
-        
-        gemini_response = client.models.generate_content(
+        # Test de réponse simple pour valider le pipeline
+        response = client.models.generate_content(
             model='gemini-2.5-flash',
-            contents=[
-                video_file, 
-                "Analyse cette vidéo de cuisine. Extrais le nom de la recette, les ingrédients précis avec leurs quantités, et les étapes de préparation sous forme de liste structurée."
-            ]
+            contents=f"Donne-moi un faux format de recette de cuisine pour tester ce lien : {tiktok_url}"
         )
         
-        return jsonify({"result": gemini_response.text})
+        return jsonify({"result": response.text})
         
     except Exception as e:
-        return jsonify({"result": f"Erreur serveur : {str(e)}"}), 500
+        error_details = traceback.format_exc()
+        print(error_details)
+        return jsonify({"result": f"Crash Python :\n{error_details}"}), 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
