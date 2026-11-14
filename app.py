@@ -16,7 +16,6 @@ def extract_recipe():
         return jsonify({"result": "Erreur : URL manquante."}), 400
         
     tiktok_url = data.get('url')
-    video_path = "temp_video.mp4"
     
     try:
         headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
@@ -36,15 +35,17 @@ def extract_recipe():
         res_json = response.json()
         
         if res_json.get('code') != 0 or 'data' not in res_json:
-            return jsonify({"result": "Erreur : Impossible de récupérer la vidéo."}), 500
+            return jsonify({"result": "Erreur : Impossible de joindre l'extracteur. Essaie avec un lien direct depuis un navigateur PC."}), 500
             
         video_dl_url = res_json['data']['play']
-        video_data = requests.get(video_dl_url, headers=headers, timeout=20).content
         
-        with open(video_path, 'wb') as f:
-            f.write(video_data)
-            
-        video_file = client.files.upload(file=video_path)
+        # Téléchargement direct en mémoire vive sans passer par le disque
+        video_bytes = requests.get(video_dl_url, headers=headers, timeout=20).content
+        
+        video_file = client.files.upload(
+            file=video_bytes,
+            mime_type="video/mp4"
+        )
         
         gemini_response = client.models.generate_content(
             model='gemini-2.5-flash',
@@ -58,10 +59,6 @@ def extract_recipe():
         
     except Exception as e:
         return jsonify({"result": f"Erreur serveur : {str(e)}"}), 500
-        
-    finally:
-        if os.path.exists(video_path):
-            os.remove(video_path)
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
