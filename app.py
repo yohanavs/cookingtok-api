@@ -10,33 +10,50 @@ from openai import OpenAI
 app = Flask(__name__)
 CORS(app)
 
-MAX_UPLOAD_BYTES = 24 * 1024 * 1024   # limite Whisper = 25 Mo
-MAX_FRAMES = 12                       # nombre d'images analysées
+MAX_UPLOAD_BYTES = 24 * 1024 * 1024
+MAX_FRAMES = 12
 VISION_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o")
 
-# Marge pour l'enveloppe du formulaire (multipart)
 app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD_BYTES + 1024 * 1024
 
-SYSTEM_PROMPT = """Tu es un assistant qui retranscrit des recettes de cuisine à partir d'une vidéo ou d'une liste d'ingrédients de frigo.
-Tu reçois : soit la transcription et des images clés, soit une liste d'ingrédients disponibles dans le frigo pour improviser une recette.
+SYSTEM_PROMPT_VIDEO = """Tu es un assistant qui retranscrit des recettes de cuisine à partir d'une vidéo.
+Tu reçois : la transcription de ce qui est dit dans la vidéo, et des images clés de la vidéo.
 
 RÈGLES STRICTES :
-- Pour chaque ingrédient, indique TOUJOURS une quantité précise estimée pour 1 personne (ex: 80 g de pâtes, 1 filet de poulet de 120 g, 1 cuillère à soupe d'huile). Ne mets jamais « quantité non précisée ».
-- Ajoute systématiquement les basiques de cuisine si nécessaire (sel, poivre, huile d'olive, beurre, ail).
-- Si tu fais une estimation visuelle ou improvisée, marque-la clairement « (estimation) ».
+- Base-toi UNIQUEMENT sur ce qui est dit, écrit à l'écran ou visible dans les images.
+- Si une quantité n'est pas explicitement donnée ou visible, écris « quantité non précisée » devant l'ingrédient. N'invente rien.
 - Réponds en français, en texte brut : pas de markdown (pas de ** ni de #).
 
 FORMAT :
 NOM DU PLAT
 
 INGRÉDIENTS
-- quantité précise + ingrédient
+- quantité + ingrédient
 
 PRÉPARATION
 1. étape détaillée
 2. ...
 
-INFOS (temps de cuisson, température, astuces) : seulement si pertinents."""
+INFOS : seulement si mentionnés dans la vidéo."""
+
+SYSTEM_PROMPT_FRIDGE = """Tu es un assistant de cuisine. L'utilisateur te donne une liste d'ingrédients de son frigo.
+RÈGLES STRICTES :
+- Invente une recette simple et équilibrée pour 1 personne.
+- Attribue obligatoirement des quantités chiffrées précises pour 1 personne (ex: 80 g de pâtes, 1 filet de poulet de 120 g, etc.).
+- Ajoute les basiques nécessaires (sel, poivre, huile, beurre).
+- Réponds en français, en texte brut : pas de markdown (pas de ** ni de #).
+
+FORMAT :
+NOM DU PLAT
+
+INGRÉDIENTS
+- quantité + ingrédient
+
+PRÉPARATION
+1. étape détaillée
+2. ...
+
+INFOS : temps de cuisson et astuces."""
 
 
 def reply(text):
@@ -105,12 +122,12 @@ def extract_recipe():
     try:
         if video.filename == "fridge.txt":
             ingredients = video.read().decode("utf-8")
-            prompt = f"J'ai ces ingrédients dans mon frigo : {ingredients}. Invente une recette simple et équilibrée pour 1 personne avec des quantités chiffrées précises et les basiques (sel, poivre, huile)."
+            prompt = f"J'ai ces ingrédients dans mon frigo : {ingredients}. Invente une recette simple et équilibrée pour 1 personne."
             
             response = client.chat.completions.create(
                 model=VISION_MODEL,
                 messages=[
-                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "system", "content": SYSTEM_PROMPT_FRIDGE},
                     {"role": "user", "content": prompt},
                 ],
                 temperature=0.4,
@@ -151,7 +168,7 @@ def extract_recipe():
         response = client.chat.completions.create(
             model=VISION_MODEL,
             messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "system", "content": SYSTEM_PROMPT_VIDEO},
                 {"role": "user", "content": content},
             ],
             temperature=0.2,
