@@ -1,11 +1,8 @@
 import base64
-import glob
 import os
 import tempfile
 
 import cv2
-import requests
-import yt_dlp
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 from openai import OpenAI
@@ -13,16 +10,18 @@ from openai import OpenAI
 app = Flask(__name__)
 CORS(app)
 
-MAX_FRAMES = 12                      # nombre d'images analysées
-MAX_DURATION = 180                   # durée max de la vidéo (secondes)
-MAX_AUDIO_BYTES = 24 * 1024 * 1024   # limite Whisper = 25 Mo
+MAX_UPLOAD_BYTES = 24 * 1024 * 1024   # limite Whisper = 25 Mo
+MAX_FRAMES = 12                       # nombre d'images analysées
 VISION_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o")
 
-SYSTEM_PROMPT = """Tu es un assistant qui retranscrit des recettes de cuisine à partir d'une vidéo TikTok.
-Tu reçois : la légende de la vidéo, la transcription de ce qui est dit, et des images clés de la vidéo.
+# Marge pour l'enveloppe du formulaire (multipart)
+app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD_BYTES + 1024 * 1024
+
+SYSTEM_PROMPT = """Tu es un assistant qui retranscrit des recettes de cuisine à partir d'une vidéo.
+Tu reçois : la transcription de ce qui est dit dans la vidéo, et des images clés de la vidéo (le texte affiché à l'écran compte).
 
 RÈGLES STRICTES :
-- Base-toi UNIQUEMENT sur ce qui est dit, écrit à l'écran ou visible dans les images, et sur la légende.
+- Base-toi UNIQUEMENT sur ce qui est dit, écrit à l'écran ou visible dans les images.
 - N'invente jamais un ingrédient ni une quantité. Si une quantité n'est pas donnée, écris « quantité non précisée ».
 - Si tu fais une estimation visuelle, marque-la clairement « (estimation) ».
 - Si la vidéo ne contient pas de recette, dis-le simplement.
@@ -42,57 +41,22 @@ INFOS (temps de cuisson, température, astuces) : seulement si mentionnés dans 
 
 
 def reply(text):
-    # Toujours 200 pour que l'interface affiche le message
+    # Toujours 200 pour que l'interface affiche le message tel quel
     return jsonify({"result": text}), 200
 
 
-def get_oembed_title(url):
-    try:
-        res = requests.get(
-            "https://www.tiktok.com/oembed",
-            params={"url": url},
-            headers={"User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X)"},
-            timeout=5,
-        )
-        if res.status_code == 200:
-            return res.json().get("title", "") or ""
-    except Exception as e:
-        print("oEmbed échoué :", e)
-    return ""
-
-
-def download_video(url, folder):
-    opts = {
-        "format": "best[height<=720]/best",
-        "outtmpl": os.path.join(folder, "video.%(ext)s"),
-        "quiet": True,
-        "noplaylist": True,
-        "socket_timeout": 20,
-        "http_headers": {
-            "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X)"
-        },
-    }
-    with yt_dlp.YoutubeDL(opts) as ydl:
-        info = ydl.extract_info(url, download=False)
-        if (info.get("duration") or 0) > MAX_DURATION:
-            raise ValueError("Vidéo trop longue.")
-        ydl.download([url])
-
-    files = glob.glob(os.path.join(folder, "video.*"))
-    if not files:
-        raise ValueError("Fichier vidéo introuvable après téléchargement.")
-
-    caption = info.get("description") or info.get("title") or ""
-    return files[0], caption
+@app.errorhandler(413)
+def too_big(_error):
+    return reply("Vidéo trop lourde (24 Mo maximum). Choisis une vidéo plus courte.")
 
 
 def transcribe(client, path):
     try:
-        if os.path.getsize(path) > MAX_AUDIO_BYTES:
-            print("Fichier trop gros pour Whisper")
-            return ""
         with open(path, "rb") as f:
-            result = client.audio.transcriptions.create(model="whisper-1", file=f)
+            # On force le nom "video.mp4" : Whisper vérifie l'extension (.mov refusé)
+            result = client.audio.transcriptions.create(
+                model="whisper-1", file=("video.mp4", f)
+            )
         return (result.text or "").strip()
     except Exception as e:
         print("Transcription échouée :", e)
@@ -131,10 +95,9 @@ def home():
 
 @app.route("/extract", methods=["POST"])
 def extract_recipe():
-    data = request.get_json(silent=True) or {}
-    url = (data.get("url") or "").strip()
-    if not url:
-        return reply("URL manquante.")
+    video = request.files.get("video")
+    if not video or not video.filename:
+        return reply("Aucune vidéo reçue.")
 
     api_key = os.environ.get("OPENAI_API_KEY")
     if not api_key:
@@ -142,32 +105,21 @@ def extract_recipe():
 
     client = OpenAI(api_key=api_key)
 
-    caption = ""
-    transcript = ""
-    frames = []
-    video_ok = False
-
     try:
         with tempfile.TemporaryDirectory() as folder:
-            try:
-                path, caption = download_video(url, folder)
-                video_ok = True
-            except Exception as e:
-                print("Téléchargement échoué :", e)
-                caption = get_oembed_title(url)
+            path = os.path.join(folder, "video.mp4")
+            video.save(path)
 
-            if video_ok:
-                transcript = transcribe(client, path)
-                frames = extract_frames(path)
+            if os.path.getsize(path) > MAX_UPLOAD_BYTES:
+                return reply("Vidéo trop lourde (24 Mo maximum). Choisis une vidéo plus courte.")
 
-        if not video_ok and not caption:
-            return reply(
-                "Impossible de récupérer la vidéo (TikTok bloque peut-être le serveur). "
-                "Réessaie dans un moment."
-            )
+            transcript = transcribe(client, path)
+            frames = extract_frames(path)
 
-        text = f"Légende TikTok :\n{caption or '(aucune)'}\n\n"
-        text += f"Transcription audio :\n{transcript or '(aucune parole détectée)'}\n\n"
+        if not transcript and not frames:
+            return reply("Impossible de lire cette vidéo. Essaie un autre fichier.")
+
+        text = f"Transcription audio :\n{transcript or '(aucune parole détectée)'}\n\n"
         if frames:
             text += f"Voici {len(frames)} images clés de la vidéo, dans l'ordre chronologique."
         else:
@@ -193,15 +145,7 @@ def extract_recipe():
             ],
             temperature=0.2,
         )
-        result = response.choices[0].message.content
-
-        if not video_ok:
-            result = (
-                "⚠️ Vidéo non téléchargeable : recette basée uniquement sur la légende, "
-                "elle peut être incomplète.\n\n" + result
-            )
-
-        return reply(result)
+        return reply(response.choices[0].message.content)
 
     except Exception as e:
         print("Erreur :", e)
