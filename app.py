@@ -1,9 +1,8 @@
 import os
-import time
 import requests
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-from google import genai
+from openai import OpenAI
 
 app = Flask(__name__)
 CORS(app)
@@ -21,11 +20,11 @@ def extract_recipe():
     tiktok_url = data.get('url')
     
     try:
-        api_key = os.environ.get("GEMINI_API_KEY")
+        api_key = os.environ.get("OPENAI_API_KEY")
         if not api_key:
-            return jsonify({"result": "Erreur : Clé GEMINI_API_KEY absente."}), 500
+            return jsonify({"result": "Erreur : Clé OPENAI_API_KEY absente."}), 500
 
-        client = genai.Client(api_key=api_key)
+        client = OpenAI(api_key=api_key)
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
         }
@@ -41,17 +40,12 @@ def extract_recipe():
 
         prompt = f"Je souhaite cuisiner la recette de cette vidéo TikTok (URL: {tiktok_url}). Titre récupéré : « {video_title} ». Extrais ou reconstitue le nom de la recette, les ingrédients et les étapes de préparation sous forme de liste structurée."
 
-        for attempt in range(3):
-            try:
-                gemini_response = client.models.generate_content(
-                    model='gemini-3.8-flash',
-                    contents=prompt
-                )
-                return jsonify({"result": gemini_response.text})
-            except Exception as api_err:
-                if attempt == 2:
-                    return jsonify({"result": "Surcharge temporaire de l'API Google (503 / High Demand). Réessaie dans quelques secondes."}), 200
-                time.sleep(2)
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt}]
+        )
+        
+        return jsonify({"result": response.choices[0].message.content})
         
     except Exception as e:
         import traceback
