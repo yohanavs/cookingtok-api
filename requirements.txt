@@ -1,5 +1,5 @@
 flask
 flask-cors
 google-genai
-yt-dlp
+yt-dlp>=2026.0.0
 gunicorn
