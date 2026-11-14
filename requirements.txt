@@ -1,5 +1,5 @@
 flask
 flask-cors
 google-genai
-https://github.com/yt-dlp/yt-dlp/archive/master.tar.gz
+requests
 gunicorn
