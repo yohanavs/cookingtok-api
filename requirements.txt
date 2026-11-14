@@ -3,4 +3,5 @@ flask-cors
 openai
 requests
 yt-dlp
+opencv-python-headless
 gunicorn
