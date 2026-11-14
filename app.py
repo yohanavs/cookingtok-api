@@ -6,7 +6,7 @@ import yt_dlp
 
 app = Flask(__name__)
 CORS(app)
-client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
+client = genai.Client()
 
 @app.route('/extract', methods=['POST'])
 def extract_recipe():
