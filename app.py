@@ -4,9 +4,24 @@ import requests
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from google import genai
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+from google.genai.errors import ServerError
 
 app = Flask(__name__)
 CORS(app)
+
+# Fonction de réessai automatique en cas d'erreur 503 / surcharge de l'API
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=2, max=10),
+    retry=retry_if_exception_type(ServerError),
+    reraise=True
+)
+def call_gemini_with_retry(client, model, prompt):
+    return client.models.generate_content(
+        model=model,
+        contents=prompt
+    )
 
 @app.route('/extract', methods=['POST'])
 def extract_recipe():
@@ -45,14 +60,9 @@ def extract_recipe():
         except Exception:
             pass
 
-        # Si l'oembed a échoué mais qu'on a l'URL ou l'ID, on laisse Gemini deviner ou s'appuyer sur l'URL brute
         prompt = f"Je souhaite cuisiner la recette de cette vidéo TikTok (ID: {video_id}, URL: {tiktok_url}). Titre récupéré : « {video_title} ». Extrais ou reconstitue le nom de la recette, les ingrédients et les étapes de préparation sous forme de liste structurée."
 
-        # Modèle validé sans structure lourde
-        gemini_response = client.models.generate_content(
-            model='gemini-3.8-flash',
-            contents=prompt
-        )
+        gemini_response = call_gemini_with_retry(client, 'gemini-3.8-flash', prompt)
         
         return jsonify({"result": gemini_response.text})
         
