@@ -1,5 +1,4 @@
 import os
-import re
 import requests
 from flask import Flask, request, jsonify
 from flask_cors import CORS
@@ -26,7 +25,6 @@ def extract_recipe():
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
         }
 
-        # On tente de récupérer le titre via oEmbed avec un timeout très court, sinon on continue quand même
         video_title = "Non disponible"
         try:
             oembed_url = f"https://www.tiktok.com/oembed?url={tiktok_url}"
@@ -39,7 +37,7 @@ def extract_recipe():
         prompt = f"Je souhaite cuisiner la recette de cette vidéo TikTok (URL: {tiktok_url}). Titre récupéré : « {video_title} ». Extrais ou reconstitue le nom de la recette, les ingrédients et les étapes de préparation sous forme de liste structurée."
 
         gemini_response = client.models.generate_content(
-            model='gemini-3.8-flash',
+            model='gemini-2.5-flash',
             contents=prompt
         )
         
