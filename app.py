@@ -40,8 +40,8 @@ def extract_recipe():
         if oembed_res.status_code == 200:
             video_title = oembed_res.json().get('title', 'Non disponible')
 
-        gemini_response = client.models.generate_content(
-            model='gemini-2.0-flash',
+                gemini_response = client.models.generate_content(
+            model='gemini-flash-latest',
             contents=f"Voici le titre et les informations textuelles d'une vidéo TikTok de cuisine (ID: {video_id}) : « {video_title} ». Extrais ou reconstitue le nom de la recette probable, les ingrédients associés et les étapes de préparation sous forme de liste structurée."
         )
         
