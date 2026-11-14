@@ -33,7 +33,6 @@ def extract_recipe():
         match = re.search(r'/video/(\d+)', tiktok_url)
         video_id = match.group(1) if match else "Inconnu"
 
-        # Interrogation directe de l'API oEmbed officielle de TikTok pour récupérer le titre et les infos de la vidéo
         oembed_url = f"https://www.tiktok.com/oembed?url={tiktok_url}"
         oembed_res = requests.get(oembed_url, headers=headers, timeout=10)
         
@@ -41,9 +40,8 @@ def extract_recipe():
         if oembed_res.status_code == 200:
             video_title = oembed_res.json().get('title', 'Non disponible')
 
-        # Analyse des informations textuelles récupérées par Gemini
         gemini_response = client.models.generate_content(
-            model='gemini-1.5-flash',
+            model='gemini-2.0-flash',
             contents=f"Voici le titre et les informations textuelles d'une vidéo TikTok de cuisine (ID: {video_id}) : « {video_title} ». Extrais ou reconstitue le nom de la recette probable, les ingrédients associés et les étapes de préparation sous forme de liste structurée."
         )
         
