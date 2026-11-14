@@ -1,4 +1,5 @@
 import os
+import re
 import requests
 from flask import Flask, request, jsonify
 from flask_cors import CORS
@@ -18,24 +19,37 @@ def extract_recipe():
     video_path = "temp_video.mp4"
     
     try:
-        # Utilisation de l'API alternative pour récupérer le lien direct sans blocage
-        api_url = f"https://www.tikwm.com/api/?url={tiktok_url}"
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1'
+        }
         
-        response = requests.get(api_url, headers=headers)
+        # Résolution du lien court si besoin
+        if "vm.tiktok.com" in tiktok_url or "vt.tiktok.com" in tiktok_url:
+            res = requests.head(tiktok_url, allow_redirects=True, headers=headers)
+            tiktok_url = res.url
+
+        match = re.search(r'/video/(\d+)', tiktok_url)
+        if not match:
+            return jsonify({"result": "Erreur : Lien TikTok invalide."}), 400
+        
+        video_id = match.group(1)
+        
+        # Utilisation d'une API web alternative stable pour récupérer le flux mp4
+        api_url = f"https://tikwm.com/api/?url=https://www.tiktok.com/@user/video/{video_id}"
+        response = requests.get(api_url, headers=headers, timeout=10)
         res_json = response.json()
         
-        if res_json.get('code') != 0:
-            return jsonify({"result": "Erreur : Impossible de récupérer la vidéo TikTok."}), 400
+        if res_json.get('code') != 0 or 'data' not in res_json:
+            return jsonify({"result": "Erreur : Impossible de récupérer la vidéo via l'extracteur."}), 500
             
         video_dl_url = res_json['data']['play']
         
-        # Téléchargement du fichier vidéo
-        video_data = requests.get(video_dl_url, headers=headers).content
+        # Téléchargement de la vidéo
+        video_data = requests.get(video_dl_url, headers=headers, timeout=15).content
         with open(video_path, 'wb') as f:
             f.write(video_data)
             
-        # Analyse avec Gemini
+        # Envoi à Gemini
         video_file = client.files.upload(file=video_path)
         
         gemini_response = client.models.generate_content(
