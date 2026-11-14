@@ -1,4 +1,5 @@
 import os
+import time
 import requests
 from flask import Flask, request, jsonify
 from flask_cors import CORS
@@ -6,6 +7,10 @@ from google import genai
 
 app = Flask(__name__)
 CORS(app)
+
+@app.route('/', methods=['GET'])
+def home():
+    return jsonify({"status": "CookingTok API est en ligne !"})
 
 @app.route('/extract', methods=['POST'])
 def extract_recipe():
@@ -36,14 +41,17 @@ def extract_recipe():
 
         prompt = f"Je souhaite cuisiner la recette de cette vidéo TikTok (URL: {tiktok_url}). Titre récupéré : « {video_title} ». Extrais ou reconstitue le nom de la recette, les ingrédients et les étapes de préparation sous forme de liste structurée."
 
-        try:
-            gemini_response = client.models.generate_content(
-                model='gemini-3.8-flash',
-                contents=prompt
-            )
-            return jsonify({"result": gemini_response.text})
-        except Exception as api_err:
-            return jsonify({"result": "Surcharge temporaire de l'API Google (503 / High Demand). Réessaie dans quelques secondes."}), 200
+        for attempt in range(3):
+            try:
+                gemini_response = client.models.generate_content(
+                    model='gemini-3.8-flash',
+                    contents=prompt
+                )
+                return jsonify({"result": gemini_response.text})
+            except Exception as api_err:
+                if attempt == 2:
+                    return jsonify({"result": "Surcharge temporaire de l'API Google (503 / High Demand). Réessaie dans quelques secondes."}), 200
+                time.sleep(2)
         
     except Exception as e:
         import traceback
