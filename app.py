@@ -49,8 +49,7 @@ def extract_recipe():
         
     except Exception as e:
         import traceback
-        err_details = traceback.format_exc()
-        return jsonify({"result": f"Crash Python :\n{err_details}"}), 500
+        return jsonify({"result": f"Erreur serveur : {str(e)}\n{traceback.format_exc()}"}), 200
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
